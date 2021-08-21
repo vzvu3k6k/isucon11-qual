@@ -1,0 +1,5 @@
+#!/bin/bash -e
+
+ssh isucon@isu01 -t "cd isucon11-qual; t/refresh_log"
+rsync -r -e ssh isu01:~/isucon11-qual/logs ~/.ghq/github.com/vzvu3k6k/isucon11-qual/
+cat logs/$(ls logs | tail -n 1)/access.log | alp ltsv --sort avg -r -m '/api/condition/[^/]+','/api/isu/[^/]+','/isu/[^/]+/graph','/isu/[^/]+/condition','/isu/[^/]+'
