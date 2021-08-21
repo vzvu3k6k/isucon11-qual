@@ -3,9 +3,9 @@
 TARGET_FILE=$1
 BASENAME=$(basename "${TARGET_FILE}")
 
-cp -r ${TARGET_FILE} .
+sudo cp -r ${TARGET_FILE} .
 git add ${BASENAME}
 git commit -m "[symlink] add ${BASENAME} from ${TARGET_FILE}"
 
 # -fオプションで強制的に上書きする
-ln -sf $(realpath ${BASENAME}) ${TARGET_FILE}
+sudo ln -sf $(realpath ${BASENAME}) ${TARGET_FILE}

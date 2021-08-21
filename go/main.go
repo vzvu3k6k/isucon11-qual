@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -50,6 +51,8 @@ var (
 	jiaJWTSigningKey *ecdsa.PublicKey
 
 	postIsuConditionTargetBaseURL string // JIAへのactivate時に登録する，ISUがconditionを送る先のURL
+
+	isuIdc *isuIDCache
 )
 
 type Config struct {
@@ -180,7 +183,7 @@ func getEnv(key string, defaultValue string) string {
 
 func NewMySQLConnectionEnv() *MySQLConnectionEnv {
 	return &MySQLConnectionEnv{
-		Host:     getEnv("MYSQL_HOST", "127.0.0.1"),
+		Host:     "isucondition-3.t.isucon.dev",
 		Port:     getEnv("MYSQL_PORT", "3306"),
 		User:     getEnv("MYSQL_USER", "isucon"),
 		DBName:   getEnv("MYSQL_DBNAME", "isucondition"),
@@ -204,6 +207,30 @@ func init() {
 	if err != nil {
 		log.Fatalf("failed to parse ECDSA public key: %v", err)
 	}
+
+	isuIdc = NewIsuIdCache()
+}
+
+type isuIDCache struct {
+	sync.Mutex
+	ids map[string]struct{}
+}
+
+func NewIsuIdCache() *isuIDCache {
+	return &isuIDCache{
+		ids: make(map[string]struct{}, 1000),
+	}
+}
+
+func (c *isuIDCache) Append(v string) {
+	c.Lock()
+	c.ids[v] = struct{}{}
+	c.Unlock()
+}
+
+func (c *isuIDCache) Has(v string) bool {
+	_, ok := c.ids[v]
+	return ok
 }
 
 func main() {
@@ -651,6 +678,8 @@ func postIsu(c echo.Context) error {
 		c.Logger().Errorf("db error: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	isuIdc.Append(jiaIsuUUID)
 
 	return c.JSON(http.StatusCreated, isu)
 }
@@ -1155,6 +1184,19 @@ func getTrend(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+func isuExists(jiaIsuUUID string) bool {
+	return isuIdc.Has(jiaIsuUUID)
+	// var count int
+	// err = tx.Get(&count, "SELECT 1 FROM `isu` WHERE `jia_isu_uuid` = ? LIMIT 1", jiaIsuUUID)
+	// if err != nil {
+	// 	c.Logger().Errorf("db error: %v", err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+	// if count == 0 {
+	// 	return c.String(http.StatusNotFound, "not found: isu")
+	// }
+}
+
 // POST /api/condition/:jia_isu_uuid
 // ISUからのコンディションを受け取る
 func postIsuCondition(c echo.Context) error {
@@ -1185,33 +1227,33 @@ func postIsuCondition(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var count int
-	err = tx.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	if count == 0 {
+	if !isuExists(jiaIsuUUID) {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
-	for _, cond := range req {
-		timestamp := time.Unix(cond.Timestamp, 0)
-
-		if !isValidConditionFormat(cond.Condition) {
+	conditions := make([]IsuCondition, len(req))
+	for i, v := range req {
+		if !isValidConditionFormat(v.Condition) {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		_, err = tx.Exec(
-			"INSERT INTO `isu_condition`"+
-				"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-				"	VALUES (?, ?, ?, ?, ?)",
-			jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
-		if err != nil {
-			c.Logger().Errorf("db error: %v", err)
-			return c.NoContent(http.StatusInternalServerError)
+		conditions[i] = IsuCondition{
+			JIAIsuUUID: jiaIsuUUID,
+			Timestamp:  time.Unix(v.Timestamp, 0),
+			IsSitting:  v.IsSitting,
+			Condition:  v.Condition,
+			Message:    v.Message,
 		}
+	}
 
+	_, err = tx.NamedExec(
+		"INSERT INTO `isu_condition`"+
+			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
+		conditions)
+	if err != nil {
+		c.Logger().Errorf("db error: %v", err)
+		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	err = tx.Commit()
