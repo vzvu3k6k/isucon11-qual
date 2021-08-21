@@ -23,7 +23,6 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 )
 
@@ -254,7 +253,7 @@ func (p *isuConditionPool) Append(values []IsuCondition) {
 func (p *isuConditionPool) Apply() {
 	p.Lock()
 
-	log.Printf("pool len: %d", len(p.pool))
+	// log.Printf("pool len: %d", len(p.pool))
 	_, err := db.NamedExec(
 		"INSERT INTO `isu_condition`"+
 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
@@ -271,18 +270,18 @@ func (p *isuConditionPool) Apply() {
 func (p *isuConditionPool) Start() {
 	c := time.Tick(100 * time.Millisecond)
 	for range c {
-		log.Print("pool tick")
+		// log.Print("pool tick")
 		p.Apply()
 	}
 }
 
 func main() {
 	e := echo.New()
-	e.Debug = true
-	e.Logger.SetLevel(log.DEBUG)
+	e.Debug = false
+	e.Logger.SetLevel(log.OFF)
 
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
+	// e.Use(middleware.Logger())
+	// e.Use(middleware.Recover())
 
 	e.POST("/initialize", postInitialize)
 
