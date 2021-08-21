@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+pushd go
+go build
+rsync -r -e ssh isucondition isu01:~/webapp/go
+ssh isucon@isu01 sudo systemctl restart isucondition.go
