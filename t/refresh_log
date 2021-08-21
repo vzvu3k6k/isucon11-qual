@@ -5,3 +5,4 @@ DIR=logs/$(date +%Y%m%d%H%M)
 mkdir ${DIR}
 sudo mv /var/log/nginx/access.log ${DIR}
 sudo chown ubuntu:ubuntu ${DIR}/*
+sudo systemctl reload nginx
