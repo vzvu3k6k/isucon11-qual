@@ -269,7 +269,7 @@ func (p *isuConditionPool) Apply() {
 }
 
 func (p *isuConditionPool) Start() {
-	c := time.Tick(45 * time.Second)
+	c := time.Tick(100 * time.Millisecond)
 	for range c {
 		log.Print("pool tick")
 		p.Apply()
