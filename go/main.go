@@ -52,7 +52,8 @@ var (
 
 	postIsuConditionTargetBaseURL string // JIAへのactivate時に登録する，ISUがconditionを送る先のURL
 
-	isuIdc *isuIDCache
+	isuIdc      *isuIDCache
+	isuCondPool *isuConditionPool
 )
 
 type Config struct {
@@ -209,6 +210,8 @@ func init() {
 	}
 
 	isuIdc = NewIsuIdCache()
+	isuCondPool = NewIsuConditionPool(db)
+	go isuCondPool.Start()
 }
 
 type isuIDCache struct {
@@ -231,6 +234,46 @@ func (c *isuIDCache) Append(v string) {
 func (c *isuIDCache) Has(v string) bool {
 	_, ok := c.ids[v]
 	return ok
+}
+
+type isuConditionPool struct {
+	sync.Mutex
+	pool []IsuCondition
+}
+
+func NewIsuConditionPool(db *sqlx.DB) *isuConditionPool {
+	return &isuConditionPool{}
+}
+
+func (p *isuConditionPool) Append(values []IsuCondition) {
+	p.Lock()
+	p.pool = append(p.pool, values...)
+	p.Unlock()
+}
+
+func (p *isuConditionPool) Apply() {
+	p.Lock()
+
+	log.Printf("pool len: %d", len(p.pool))
+	_, err := db.NamedExec(
+		"INSERT INTO `isu_condition`"+
+			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
+		p.pool)
+	if err != nil {
+		log.Errorf("db error: %v", err)
+	}
+	p.pool = p.pool[:0]
+
+	p.Unlock()
+}
+
+func (p *isuConditionPool) Start() {
+	c := time.Tick(100 * time.Millisecond)
+	for range c {
+		log.Print("pool tick")
+		p.Apply()
+	}
 }
 
 func main() {
@@ -1220,13 +1263,6 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "bad request body")
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
-
 	if !isuExists(jiaIsuUUID) {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
@@ -1245,22 +1281,7 @@ func postIsuCondition(c echo.Context) error {
 			Message:    v.Message,
 		}
 	}
-
-	_, err = tx.NamedExec(
-		"INSERT INTO `isu_condition`"+
-			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
-		conditions)
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+	isuCondPool.Append(conditions)
 
 	return c.NoContent(http.StatusAccepted)
 }
