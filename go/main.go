@@ -254,7 +254,7 @@ func (p *isuConditionPool) Append(values []IsuCondition) {
 func (p *isuConditionPool) Apply() {
 	p.Lock()
 
-	log.Printf("pool len: %d", len(p.pool))
+	// log.Printf("pool len: %d", len(p.pool))
 	_, err := db.NamedExec(
 		"INSERT INTO `isu_condition`"+
 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
@@ -271,7 +271,7 @@ func (p *isuConditionPool) Apply() {
 func (p *isuConditionPool) Start() {
 	c := time.Tick(100 * time.Millisecond)
 	for range c {
-		log.Print("pool tick")
+		// log.Print("pool tick")
 		p.Apply()
 	}
 }
