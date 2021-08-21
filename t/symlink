@@ -3,7 +3,7 @@
 TARGET_FILE=$1
 BASENAME=$(basename "${TARGET_FILE}")
 
-cp ${TARGET_FILE} .
+cp -r ${TARGET_FILE} .
 git add ${BASENAME}
 git commit -m "[symlink] add ${BASENAME} from ${TARGET_FILE}"
 
