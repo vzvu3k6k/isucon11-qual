@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -50,6 +51,8 @@ var (
 	jiaJWTSigningKey *ecdsa.PublicKey
 
 	postIsuConditionTargetBaseURL string // JIAへのactivate時に登録する，ISUがconditionを送る先のURL
+
+	isuIdc *isuIDCache
 )
 
 type Config struct {
@@ -204,6 +207,30 @@ func init() {
 	if err != nil {
 		log.Fatalf("failed to parse ECDSA public key: %v", err)
 	}
+
+	isuIdc = NewIsuIdCache()
+}
+
+type isuIDCache struct {
+	sync.Mutex
+	ids map[string]struct{}
+}
+
+func NewIsuIdCache() *isuIDCache {
+	return &isuIDCache{
+		ids: make(map[string]struct{}, 1000),
+	}
+}
+
+func (c *isuIDCache) Append(v string) {
+	c.Lock()
+	c.ids[v] = struct{}{}
+	c.Unlock()
+}
+
+func (c *isuIDCache) Has(v string) bool {
+	_, ok := c.ids[v]
+	return ok
 }
 
 func main() {
@@ -651,6 +678,8 @@ func postIsu(c echo.Context) error {
 		c.Logger().Errorf("db error: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	isuIdc.Append(jiaIsuUUID)
 
 	return c.JSON(http.StatusCreated, isu)
 }
@@ -1155,6 +1184,19 @@ func getTrend(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+func isuExists(jiaIsuUUID string) bool {
+	return isuIdc.Has(jiaIsuUUID)
+	// var count int
+	// err = tx.Get(&count, "SELECT 1 FROM `isu` WHERE `jia_isu_uuid` = ? LIMIT 1", jiaIsuUUID)
+	// if err != nil {
+	// 	c.Logger().Errorf("db error: %v", err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+	// if count == 0 {
+	// 	return c.String(http.StatusNotFound, "not found: isu")
+	// }
+}
+
 // POST /api/condition/:jia_isu_uuid
 // ISUからのコンディションを受け取る
 func postIsuCondition(c echo.Context) error {
@@ -1185,13 +1227,7 @@ func postIsuCondition(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var count int
-	err = tx.Get(&count, "SELECT 1 FROM `isu` WHERE `jia_isu_uuid` = ? LIMIT 1", jiaIsuUUID)
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	if count == 0 {
+	if !isuExists(jiaIsuUUID) {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
