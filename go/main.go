@@ -162,12 +162,10 @@ type TrendCondition struct {
 }
 
 type PostIsuConditionRequest struct {
-	IsSitting   bool      `json:"is_sitting" db:"is_sitting"`
-	Condition   string    `json:"condition" db:"condition"`
-	Message     string    `json:"message" db:"message"`
-	Timestamp   int64     `json:"timestamp"`
-	Timestamp_t time.Time `db:"timestamp"`
-	JIAIsuUUID  string    `db:"jia_isu_uuid"`
+	IsSitting bool   `json:"is_sitting"`
+	Condition string `json:"condition"`
+	Message   string `json:"message"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type JIAServiceRequest struct {
@@ -1233,20 +1231,26 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
+	conditions := make([]IsuCondition, len(req))
 	for i, v := range req {
 		if !isValidConditionFormat(v.Condition) {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		req[i].JIAIsuUUID = jiaIsuUUID
-		req[i].Timestamp_t = time.Unix(v.Timestamp, 0)
+		conditions[i] = IsuCondition{
+			JIAIsuUUID: jiaIsuUUID,
+			Timestamp:  time.Unix(v.Timestamp, 0),
+			IsSitting:  v.IsSitting,
+			Condition:  v.Condition,
+			Message:    v.Message,
+		}
 	}
 
 	_, err = tx.NamedExec(
 		"INSERT INTO `isu_condition`"+
 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-			"	VALUES (:jia_isu_uuid, :timestamp_t, :is_sitting, :condition, :message)",
-		req)
+			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
+		conditions)
 	if err != nil {
 		c.Logger().Errorf("db error: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
