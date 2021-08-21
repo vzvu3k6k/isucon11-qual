@@ -1161,7 +1161,7 @@ func calculateConditionLevel(condition string) (string, error) {
 // GET /api/trend
 // ISUの性格毎の最新のコンディション情報
 func getTrend(c echo.Context) error {
-	now := time.Now().Unix()
+	now := time.Now().Unix() % 10
 	cache, ok := trendCache.Load(now)
 	var res = make([]TrendResponse, 0, 200)
 
