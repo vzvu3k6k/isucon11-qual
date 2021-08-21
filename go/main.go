@@ -239,21 +239,10 @@ func (c *isuIDCache) Has(v string) bool {
 type isuConditionPool struct {
 	sync.Mutex
 	pool []IsuCondition
-	stmt *sqlx.NamedStmt
 }
 
 func NewIsuConditionPool(db *sqlx.DB) *isuConditionPool {
-	stmt, err := db.PrepareNamed(
-		"INSERT INTO `isu_condition`" +
-			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)" +
-			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return &isuConditionPool{
-		stmt: stmt,
-	}
+	return &isuConditionPool{}
 }
 
 func (p *isuConditionPool) Append(values []IsuCondition) {
@@ -266,19 +255,21 @@ func (p *isuConditionPool) Apply() {
 	p.Lock()
 
 	log.Printf("pool len: %d", len(p.pool))
-	if len(p.pool) > 0 {
-		_, err := p.stmt.Exec(p.pool)
-		if err != nil {
-			log.Errorf("db error: %v", err)
-		}
-		p.pool = p.pool[:0]
+	_, err := db.NamedExec(
+		"INSERT INTO `isu_condition`"+
+			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
+		p.pool)
+	if err != nil {
+		log.Errorf("db error: %v", err)
 	}
+	p.pool = p.pool[:0]
 
 	p.Unlock()
 }
 
 func (p *isuConditionPool) Start() {
-	c := time.Tick(5 * time.Second)
+	c := time.Tick(45 * time.Second)
 	for range c {
 		log.Print("pool tick")
 		p.Apply()
